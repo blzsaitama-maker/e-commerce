@@ -187,8 +187,11 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
           }
 
           // Preenche datas
-          _manufacturingDate = product.manufacturingDate;
-          _expiryDate = product.expiryDate;
+          // CORREÇÃO: Se a data do produto for nula, usamos a data atual como padrão.
+          _manufacturingDate = product.manufacturingDate ?? DateTime.now();
+          _expiryDate =
+              product.expiryDate ??
+              DateTime.now().add(const Duration(days: 30));
 
           // Recalcula margem visualmente
           _calculateMargin();
@@ -242,17 +245,14 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   Future<void> _submitForm() async {
     if (_formKey.currentState!.validate()) {
       final newProduct = Product(
-        id: _editingProductId, // IMPORTANTE: Passa o ID se for edição
+        id: _editingProductId ?? 0, // IMPORTANTE: Passa o ID se for edição
         name: _nameController.text,
         priceBuy: double.tryParse(_priceBuyController.text) ?? 0.0,
         priceSell: double.tryParse(_priceSellController.text) ?? 0.0,
         stock: int.tryParse(_stockController.text) ?? 0,
-        category: _selectedSupplier!,
         manufacturingDate: _manufacturingDate,
         expiryDate: _expiryDate,
-        barcode: _barcodeController.text.isEmpty
-            ? null
-            : _barcodeController.text.replaceAll('-', ''),
+        barcode: _barcodeController.text.replaceAll('-', ''),
       );
 
       try {
@@ -320,10 +320,9 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // O RESTANTE DO CÓDIGO DO BUILD CONTINUA O MESMO...
-    // (Copie o conteúdo do método build original aqui)
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      // === MODIFICAÇÃO 1: Fundo Cinza Claro ===
+      backgroundColor: Colors.grey[50], 
       body: Column(
         children: [
           // Barra de Título
@@ -387,7 +386,8 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                         FilteringTextInputFormatter.digitsOnly,
                                         BarcodeTextInputFormatter(),
                                       ],
-                                      color: Colors.yellow[100],
+                                      // Mantendo amarelo claro para destaque
+                                      color: Colors.yellow[100], 
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -503,10 +503,8 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                           child: Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHighest
-                                  .withOpacity(0.3),
+                              // === MODIFICAÇÃO 3: Fundo do Painel de Custos
+                              color: Colors.white.withOpacity(0.8), 
                               border: Border.all(
                                 color: Colors.grey.withOpacity(0.3),
                               ),
@@ -582,9 +580,8 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                           child: Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primaryContainer.withOpacity(0.2),
+                              // === MODIFICAÇÃO 3: Fundo do Painel de Preço Final
+                              color: Colors.white.withOpacity(0.8), 
                               border: Border.all(
                                 color: Theme.of(
                                   context,
@@ -746,7 +743,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     );
   }
 
-  // --- Widgets Auxiliares (Mantenha igual ao seu código original) ---
+  // --- Widgets Auxiliares ---
 
   Widget _buildHeader(String title) {
     return Padding(
@@ -786,6 +783,8 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
             value: value,
             isExpanded: true,
             decoration: const InputDecoration(
+              filled: true, // Adicionado para manter a consistência visual
+              fillColor: Colors.white, // Fundo branco
               border: OutlineInputBorder(),
               contentPadding: EdgeInsets.symmetric(horizontal: 8),
             ),
@@ -857,8 +856,9 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
               color: textColor,
             ),
             decoration: InputDecoration(
-              filled: color != null,
-              fillColor: color,
+              // === MODIFICAÇÃO 2: Campos de Texto Fundo Branco ===
+              filled: true,
+              fillColor: color ?? Colors.white, // Usa 'color' se for passado (ex: amarelo), senão usa BRANCO
               border: const OutlineInputBorder(),
               contentPadding: const EdgeInsets.only(
                 left: 8,
@@ -897,6 +897,8 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
             height: 40,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
+              // Adicionado fundo branco aqui também para consistência
+              color: Colors.white, 
               border: Border.all(color: Colors.grey),
               borderRadius: BorderRadius.circular(4),
             ),

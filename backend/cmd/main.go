@@ -1,50 +1,55 @@
 package main
 
 import (
+	"encoding/json" // <--- ADICIONE ISSO
 	"log"
 	"net/http"
 
-	"github.com/gorilla/mux" // Importante: Garanta que baixou isso (go get github.com/gorilla/mux)
+	"github.com/gorilla/mux"
 	
 	"e-commerce-backend/internal/database"
 	"e-commerce-backend/internal/handlers"
 )
 
+// --- ADICIONE ESSA STRUCT ---
+type VersionInfo struct {
+	Version     string `json:"version"`
+	DownloadUrl string `json:"download_url"`
+	MustUpdate  bool   `json:"must_update"`
+}
+
+// --- ADICIONE ESSE HANDLER ---
+func CheckVersionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	// DICA: Em produção, você leria isso de um arquivo config.json ou do banco
+	response := VersionInfo{
+		Version:     "1.0.1", // Versão mais nova disponível
+		DownloadUrl: "https://seusite.com/downloads/linux/app-latest.tar.gz",
+		MustUpdate:  false,
+	}
+	
+	json.NewEncoder(w).Encode(response)
+}
+
 func main() {
-	// 1. Inicializa o banco de dados (GORM)
-	// Isso preenche a variável database.DB
+	// ... (seu código de inicialização do banco continua igual) ...
 	database.InitDB()
-
-	// 2. INJEÇÃO DE DEPENDÊNCIA (O Pulo do Gato)
-	// Criamos o Repositório usando a conexão do banco
 	repo := database.NewGormProductRepository(database.DB)
-
-	// Criamos o Handler injetando o Repositório nele
-	// Agora o Handler não sabe que é SQLite, só sabe que tem um Repositório
 	produtoHandler := handlers.NewProdutoHandler(repo)
 
-	// 3. Configura o Roteador (Gorilla Mux)
 	r := mux.NewRouter()
 
-	// --- ROTAS ---
-
-	// GET /produtos -> Lista tudo OU busca por ?barcode=...
+	// ... (suas rotas de produtos continuam iguais) ...
 	r.HandleFunc("/produtos", produtoHandler.ListarProdutos).Methods("GET")
-
-	// POST /produtos -> Cria novo produto
 	r.HandleFunc("/produtos", produtoHandler.CreateProduct).Methods("POST")
-
-	// PUT /produtos/{id} -> Atualiza produto existente (NOVA ROTA)
-	// O {id} é capturado pelo mux.Vars no handler
 	r.HandleFunc("/produtos/{id}", produtoHandler.UpdateProduct).Methods("PUT")
-
-	// GET /produtos/vencendo -> Filtro de validade
 	r.HandleFunc("/produtos/vencendo", produtoHandler.ListarProdutosVencendo).Methods("GET")
 
-	// 4. Inicia o Servidor
-	log.Println("🚀 Servidor rodando na porta 8080 com Mux e Repository Pattern...")
-	
-	// Passamos o 'r' (router) em vez de nil
+	// --- ADICIONE A NOVA ROTA AQUI ---
+	r.HandleFunc("/version", CheckVersionHandler).Methods("GET")
+
+	log.Println("🚀 Servidor rodando na porta 8080...")
 	if err := http.ListenAndServe(":8080", r); err != nil {
 		log.Fatal(err)
 	}

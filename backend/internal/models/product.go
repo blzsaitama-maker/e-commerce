@@ -6,62 +6,60 @@ import (
 	"gorm.io/gorm"
 )
 
+// --- 1. CATEGORIA (Normalização) ---
+// Evita repetir texto. "Bebidas" vira ID 1.
+type Category struct {
+	ID          uint   `json:"id" gorm:"primarykey"`
+	Name        string `json:"name" gorm:"unique;not null"`
+	Description string `json:"description"`
+}
+
+// --- 2. PRODUTO (Relacional) ---
 type Product struct {
-	gorm.Model        `json:"-"` // Oculta os campos padrão do GORM do JSON principal
-	ID                uint       `json:"id" gorm:"primarykey"` // Expõe o ID explicitamente
-	Name              string     `json:"name" gorm:"not null"`
-	PriceBuy          float64    `json:"price_buy" gorm:"not null"`
-	PriceSell         float64    `json:"price_sell" gorm:"not null"`
-	Stock             int        `json:"stock" gorm:"not null"`
-	Category          string     `json:"category"`
-	ManufacturingDate time.Time  `json:"manufacturing_date"`
-	ExpiryDate        time.Time  `json:"expiry_date"`
-	Barcode           string     `json:"barcode" gorm:"not null;default:''"` // New field, now mandatory
+	gorm.Model `json:"-"` // Oculta campos internos do GORM
+	ID         uint       `json:"id" gorm:"primarykey"`
+
+	// Index para deixar a busca por nome muito rápida
+	Name string `json:"name" gorm:"index;not null"`
+
+	// Código de Barras ÚNICO (Impede duplicidade)
+	Barcode string `json:"barcode" gorm:"uniqueIndex;not null;default:''"`
+
+	PriceBuy  float64 `json:"price_buy" gorm:"not null"`
+	PriceSell float64 `json:"price_sell" gorm:"not null"`
+
+	Stock    int `json:"stock" gorm:"not null;default:0"`
+	MinStock int `json:"min_stock" gorm:"default:5"` // Para alertas
+
+	// Chave Estrangeira para Categoria
+	CategoryID uint     `json:"category_id"`
+	Category   Category `json:"category" gorm:"foreignKey:CategoryID"`
+
+	ManufacturingDate time.Time `json:"manufacturing_date"`
+	ExpiryDate        time.Time `json:"expiry_date" gorm:"index"` // Index para ordenar validade
 }
 
-// IsNearExpiry verifica se o produto já passou de 80% da vida útil
+// --- 3. AUDITORIA DE ESTOQUE (Rastreabilidade) ---
+// Registra CADA mudança no estoque. Nunca apague dados daqui.
+type StockMovement struct {
+	gorm.Model `json:"-"`
+	ID         uint `json:"id" gorm:"primarykey"`
+
+	ProductID uint    `json:"product_id" gorm:"not null"`
+	Product   Product `json:"-" gorm:"foreignKey:ProductID"`
+
+	Type     string `json:"type" gorm:"not null"` // "IN" (Entrada), "OUT" (Saída), "ADJUST" (Ajuste)
+	Quantity int    `json:"quantity" gorm:"not null"`
+	Reason   string `json:"reason"` // Ex: "Venda #102", "Perda", "Compra NF 50"
+}
+
+// Lógica de Vencimento
 func (p *Product) IsNearExpiry() bool {
-	// 1. Calcula a vida total do produto (Vencimento - Fabricação)
+	if p.ExpiryDate.IsZero() {
+		return false
+	}
 	totalLife := p.ExpiryDate.Sub(p.ManufacturingDate)
-
-	// 2. Calcula o tempo de alerta (20% do total)
-	// Usamos divisão por 5 para manter tudo como número inteiro (time.Duration)
 	alertDuration := totalLife / 5
-
-	// 3. Define a data de disparo do alerta (Vencimento - Tempo de Alerta)
-	// Ex: Se vence dia 30 e o alerta é 5 dias, o gatilho é dia 25.
 	triggerDate := p.ExpiryDate.Add(-alertDuration)
-
-	// 4. Verifica se "Agora" já passou dessa data de gatilho
 	return time.Now().After(triggerDate)
-}
-
-// CreateProduct insere um novo registro de produto no banco de dados.
-func CreateProduct(db *gorm.DB, product *Product) error {
-	// O GORM gera o SQL de insert automaticamente baseado na struct
-	return db.Create(product).Error
-}
-
-// DeleteProduct remove (soft delete) um produto pelo ID.
-func DeleteProduct(db *gorm.DB, id uint) error {
-	// Passamos &Product{} para o GORM saber qual tabela usar.
-	return db.Delete(&Product{}, id).Error
-}
-
-// GetProductTableSchema retorna o SQL bruto para criação da tabela.
-// (Renomeado para evitar conflito com a função de criar o registro acima)
-func GetProductTableSchema() string {
-	return `CREATE TABLE IF NOT EXISTS products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT NOT NULL,
-        preco_buy REAL NOT NULL,
-        preco_sell REAL NOT NULL,
-        stock INTEGER NOT NULL,
-        category TEXT,
-        manufacturing_date DATETIME,
-        expiry_date DATETIME,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        barcode TEXT NOT NULL,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );`
 }

@@ -4,42 +4,39 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-    "time"
+	"time"
 
-	"github.com/gorilla/mux" // Precisamos disso para pegar o ID na URL
-	"e-commerce-backend/internal/database" // Importe seu pacote database
+	"github.com/gorilla/mux"
+	"e-commerce-backend/internal/database"
 	"e-commerce-backend/internal/models"
 )
 
 type ProdutoHandler struct {
-	// Agora dependemos da INTERFACE, não do banco concreto (*sql.DB)
 	Repo database.ProductRepository
 }
 
-// Construtor auxiliar (opcional, mas boa prática)
 func NewProdutoHandler(repo database.ProductRepository) *ProdutoHandler {
 	return &ProdutoHandler{Repo: repo}
 }
 
-// 1. LISTAR (Com suporte a busca por Barcode)
+// LISTAR
 func (h *ProdutoHandler) ListarProdutos(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Verifica se o Flutter mandou ?barcode=123
 	barcode := r.URL.Query().Get("barcode")
 
 	if barcode != "" {
-		// --- BUSCA ESPECÍFICA ---
 		produto, err := h.Repo.GetProductByBarcode(barcode)
 		if err != nil {
-            // Se não achar, pode retornar 404 ou lista vazia, dependendo da regra.
-            // Aqui vamos retornar null/vazio se der erro de "record not found"
-			http.Error(w, "Produto não encontrado", http.StatusNotFound)
+			// Retorna JSON vazio ou erro 404 limpo
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Produto não encontrado"})
 			return
 		}
+		// Preload da Categoria para o Frontend mostrar o nome
+		// (Isso depende se o seu Repo faz Preload, se não, retorna só o ID)
 		json.NewEncoder(w).Encode(produto)
 	} else {
-		// --- LISTAGEM GERAL ---
 		products, err := h.Repo.GetProducts()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -49,48 +46,54 @@ func (h *ProdutoHandler) ListarProdutos(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// 2. LISTAR VENCENDO (Mantendo sua lógica de filtro, mas usando o Repo)
+// LISTAR VENCENDO
 func (h *ProdutoHandler) ListarProdutosVencendo(w http.ResponseWriter, r *http.Request) {
-	// Busca todos via Repository
 	allProducts, err := h.Repo.GetProducts()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	var produtosVencendo []models.Product
-
-	// Aplica o filtro de vencimento no Go (como você já fazia)
+	produtosVencendo := []models.Product{}
 	for _, p := range allProducts {
 		if p.IsNearExpiry() {
 			produtosVencendo = append(produtosVencendo, p)
 		}
 	}
 
-	if produtosVencendo == nil {
-		produtosVencendo = make([]models.Product, 0)
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(produtosVencendo)
 }
 
-// 3. CRIAR PRODUTO (POST)
+// CRIAR
 func (h *ProdutoHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	var p models.Product
-	err := json.NewDecoder(r.Body).Decode(&p)
-	if err != nil {
+	
+	// Tenta decodificar o JSON
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		http.Error(w, "JSON inválido", http.StatusBadRequest)
 		return
 	}
 
-    // Datas padrão caso venham vazias (opcional)
-    if p.ManufacturingDate.IsZero() { p.ManufacturingDate = time.Now() }
-    if p.ExpiryDate.IsZero() { p.ExpiryDate = time.Now().AddDate(0, 1, 0) }
+	// --- LÓGICA DE PROTEÇÃO (MVP) ---
+	// Se o frontend mandar sem Categoria, forçamos a Categoria 1 (Geral)
+	// Isso evita erro de Foreign Key no banco
+	if p.CategoryID == 0 {
+		p.CategoryID = 1
+	}
 
-	// Chama o Repository (o GORM lá dentro resolve o INSERT)
+	// Datas padrão se vierem vazias
+	if p.ManufacturingDate.IsZero() {
+		p.ManufacturingDate = time.Now()
+	}
+	if p.ExpiryDate.IsZero() {
+		p.ExpiryDate = time.Now().AddDate(0, 1, 0) // +1 mês padrão
+	}
+
 	if err := h.Repo.CreateProduct(&p); err != nil {
-		http.Error(w, "Erro ao criar produto: "+err.Error(), http.StatusInternalServerError)
+		// Retorna erro detalhado (provavelmente barcode duplicado)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -99,18 +102,12 @@ func (h *ProdutoHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(p)
 }
 
-// 4. ATUALIZAR PRODUTO (PUT) - NOVO!
+// ATUALIZAR
 func (h *ProdutoHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
-	// Pega o ID da URL (/produtos/{id})
+	
 	vars := mux.Vars(r)
-	idStr := vars["id"]
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		http.Error(w, "ID inválido", http.StatusBadRequest)
-		return
-	}
+	id, _ := strconv.Atoi(vars["id"])
 
 	var p models.Product
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
@@ -118,15 +115,18 @@ func (h *ProdutoHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Garante que o ID do objeto é o mesmo da URL
 	p.ID = uint(id)
+	
+	// Proteção de categoria na edição também
+	if p.CategoryID == 0 {
+		p.CategoryID = 1
+	}
 
-	// Chama o Repository para salvar as alterações
 	if err := h.Repo.UpdateProduct(&p); err != nil {
 		http.Error(w, "Erro ao atualizar: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "Produto atualizado"})
+	json.NewEncoder(w).Encode(map[string]string{"message": "Produto atualizado com sucesso"})
 }

@@ -1,91 +1,97 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../models/product.dart';
+import 'package:frontend/app/data/models/product.dart';
 
 class ApiService {
-  // ⚠️ USE ESTE PARA LINUX DESKTOP:
-  static const String baseUrl = 'http://localhost:8080';
+  // Configurado para rodar no Linux Desktop (127.0.0.1 é mais seguro que localhost)
+  static const String _baseUrl = 'http://127.0.0.1:8080';
 
-  // 1. GET: Listar todos
+  // 1. GET ALL PRODUCTS
   Future<List<Product>> getProducts() async {
-    final response = await http.get(Uri.parse('$baseUrl/produtos'));
+    final response = await http.get(Uri.parse('$_baseUrl/produtos'));
 
     if (response.statusCode == 200) {
-      final body = jsonDecode(response.body);
-      if (body == null) return [];
-      return (body as List).map((item) => Product.fromJson(item)).toList();
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((json) => Product.fromJson(json)).toList();
     } else {
-      throw Exception('Erro ao carregar produtos');
+      // Tenta decodificar o erro do backend se houver
+      String error = 'Erro desconhecido';
+      try {
+        final errorJson = jsonDecode(response.body);
+        error = errorJson['error'] ?? 'Falha ao buscar produtos';
+      } catch (_) {}
+      throw Exception('Falha ao carregar produtos (Status ${response.statusCode}): $error');
     }
   }
 
-  // 2. GET: Listar Vencendo
-  Future<List<Product>> getExpiringProducts() async {
-    final response = await http.get(Uri.parse('$baseUrl/produtos/vencendo'));
+  // 2. GET PRODUCT BY BARCODE (Usado pelo ProductFormScreen e SalesScreen)
+  Future<Product?> getProductByBarcode(String barcode) async {
+    // A API Go suporta ?barcode=...
+    final response = await http.get(Uri.parse('$_baseUrl/produtos?barcode=$barcode'));
 
     if (response.statusCode == 200) {
-      final body = jsonDecode(response.body);
-      if (body == null) return [];
-      return (body as List).map((item) => Product.fromJson(item)).toList();
-    } else {
-      throw Exception('Erro ao carregar alertas');
+      // Se for encontrado, a API Go retorna um *único* objeto (ou lista com 1)
+      final dynamic data = jsonDecode(response.body);
+      
+      // Se a resposta for uma lista com um item:
+      if (data is List && data.isNotEmpty) {
+          return Product.fromJson(data[0]);
+      } 
+      // Se a resposta for um único objeto:
+      if (data is Map<String, dynamic>) {
+          // A API Go retorna um mapa, mas se for erro 404, ela retorna uma string
+          if (data.containsKey('error')) {
+            return null;
+          }
+          return Product.fromJson(data);
+      }
+      
+    } else if (response.statusCode == 404) {
+      // Produto não encontrado (Retorna null para o Form poder cadastrar)
+      return null;
     }
+    
+    // Retorno padrão em caso de erro de servidor (e.g., 500)
+    throw Exception('Erro ao buscar produto por código: Status ${response.statusCode}');
   }
 
-  // 3. POST: Criar Produto
+
+  // 3. CREATE PRODUCT
   Future<void> createProduct(Product product) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/produtos'),
-      headers: {"Content-Type": "application/json"},
+      Uri.parse('$_baseUrl/produtos'),
+      headers: {'Content-Type': 'application/json'},
       body: jsonEncode(product.toJson()),
     );
 
-    if (response.statusCode != 201) {
-      throw Exception('Erro ao criar produto: ${response.body}');
+    if (response.statusCode != 201) { // 201 é StatusCreated no Go
+      String error = response.body;
+      try {
+        final errorJson = jsonDecode(response.body);
+        error = errorJson['error'] ?? error;
+      } catch (_) {}
+      throw Exception('Falha ao criar produto: $error');
     }
   }
 
-  // 4. PUT: Atualizar Produto Existente
+  // 4. UPDATE PRODUCT
   Future<void> updateProduct(Product product) async {
-    // Assumindo que sua API aceite PUT em /produtos/{id}
-    if (product.id == null) return;
-
     final response = await http.put(
-      Uri.parse('$baseUrl/produtos/${product.id}'),
-      headers: {"Content-Type": "application/json"},
+      // A rota PUT no backend Go é /produtos/{id}
+      Uri.parse('$_baseUrl/produtos/${product.id}'),
+      headers: {'Content-Type': 'application/json'},
       body: jsonEncode(product.toJson()),
     );
 
-    if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Erro ao atualizar produto: ${response.body}');
+    if (response.statusCode != 200) {
+      String error = response.body;
+      try {
+        final errorJson = jsonDecode(response.body);
+        error = errorJson['error'] ?? error;
+      } catch (_) {}
+      throw Exception('Falha ao atualizar produto: $error');
     }
   }
 
-  // 5. GET: Buscar por Código de Barras
-  Future<Product?> getProductByBarcode(String barcode) async {
-    try {
-      // Ajuste a query string conforme seu backend (ex: ?barcode=... ou filtro manual)
-      final response = await http.get(
-        Uri.parse('$baseUrl/produtos?barcode=$barcode'),
-      );
-
-      if (response.statusCode == 200) {
-        final body = jsonDecode(response.body);
-
-        if (body == null || (body is List && body.isEmpty)) {
-          return null;
-        }
-
-        // Pega o primeiro item se for uma lista, ou o próprio corpo se for um mapa.
-        final Map<String, dynamic> productJson = body is List
-            ? body.first
-            : body;
-
-        return Product.fromJson(productJson);
-      }
-    } catch (e) {
-      print("Erro ao buscar produto: $e");
-    }
-    return null;
-  }
+  // TODO: Implementar lógica de StockMovement no futuro
 }
