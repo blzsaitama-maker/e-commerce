@@ -1,0 +1,16 @@
+name: backend_test
+description: Testes para o backend.
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+# Necessário se você usar o flutter_test
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  test: ^1.24.0
+  flutter_test:
+    sdk: flutter
