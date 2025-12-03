@@ -23,7 +23,7 @@ class Product {
 
   factory Product.fromJson(Map<String, dynamic> json) {
     return Product(
-      id: json['ID'],
+      id: json['id'], // Corrigido para 'id' minúsculo, conforme o backend agora envia
       name: json['name'] ?? '',
       priceBuy: (json['price_buy'] as num?)?.toDouble() ?? 0.0,
       priceSell: (json['price_sell'] as num?)?.toDouble() ?? 0.0,
@@ -41,6 +41,7 @@ class Product {
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id, // Envia o ID de volta para o backend no update
       'name': name,
       'price_buy': priceBuy,
       'price_sell': priceSell,

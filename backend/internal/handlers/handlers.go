@@ -1,110 +1,132 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strconv"
+    "time"
 
+	"github.com/gorilla/mux" // Precisamos disso para pegar o ID na URL
+	"e-commerce-backend/internal/database" // Importe seu pacote database
 	"e-commerce-backend/internal/models"
 )
 
 type ProdutoHandler struct {
-	DB *sql.DB
+	// Agora dependemos da INTERFACE, não do banco concreto (*sql.DB)
+	Repo database.ProductRepository
 }
 
+// Construtor auxiliar (opcional, mas boa prática)
+func NewProdutoHandler(repo database.ProductRepository) *ProdutoHandler {
+	return &ProdutoHandler{Repo: repo}
+}
+
+// 1. LISTAR (Com suporte a busca por Barcode)
 func (h *ProdutoHandler) ListarProdutos(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.DB.Query("SELECT id, name, price_buy, price_sell, stock, category, manufacturing_date, expiry_date FROM products")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
+	w.Header().Set("Content-Type", "application/json")
 
-	var products []models.Product
-	for rows.Next() {
-		var p models.Product
-		if err := rows.Scan(&p.ID, &p.Name, &p.PriceBuy, &p.PriceSell, &p.Stock, &p.Category, &p.ManufacturingDate, &p.ExpiryDate); err != nil {
+	// Verifica se o Flutter mandou ?barcode=123
+	barcode := r.URL.Query().Get("barcode")
+
+	if barcode != "" {
+		// --- BUSCA ESPECÍFICA ---
+		produto, err := h.Repo.GetProductByBarcode(barcode)
+		if err != nil {
+            // Se não achar, pode retornar 404 ou lista vazia, dependendo da regra.
+            // Aqui vamos retornar null/vazio se der erro de "record not found"
+			http.Error(w, "Produto não encontrado", http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(produto)
+	} else {
+		// --- LISTAGEM GERAL ---
+		products, err := h.Repo.GetProducts()
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		products = append(products, p)
+		json.NewEncoder(w).Encode(products)
 	}
-
-	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	if products == nil {
-		products = make([]models.Product, 0)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(products)
 }
 
+// 2. LISTAR VENCENDO (Mantendo sua lógica de filtro, mas usando o Repo)
 func (h *ProdutoHandler) ListarProdutosVencendo(w http.ResponseWriter, r *http.Request) {
-	// 1. Busca todos os produtos do banco
-	rows, err := h.DB.Query("SELECT id, name, price_buy, price_sell, stock, category, manufacturing_date, expiry_date FROM products")
+	// Busca todos via Repository
+	allProducts, err := h.Repo.GetProducts()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
 
-	var produtosVencendo []models.Product // Começa uma lista vazia
+	var produtosVencendo []models.Product
 
-	for rows.Next() {
-		var p models.Product
-		// Preenchemos os dados do produto 'p'
-		if err := rows.Scan(&p.ID, &p.Name, &p.PriceBuy, &p.PriceSell, &p.Stock, &p.Category, &p.ManufacturingDate, &p.ExpiryDate); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// 2. O Filtro: Só adiciona se estiver vencendo (20% finais)
+	// Aplica o filtro de vencimento no Go (como você já fazia)
+	for _, p := range allProducts {
 		if p.IsNearExpiry() {
 			produtosVencendo = append(produtosVencendo, p)
 		}
 	}
 
-	// 3. Retorna a lista filtrada como JSON
 	if produtosVencendo == nil {
 		produtosVencendo = make([]models.Product, 0)
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(produtosVencendo)
 }
 
-func(h *ProdutoHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
+// 3. CRIAR PRODUTO (POST)
+func (h *ProdutoHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	var p models.Product
 	err := json.NewDecoder(r.Body).Decode(&p)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "JSON inválido", http.StatusBadRequest)
 		return
 	}
 
-	stmt, err := h.DB.Prepare("INSERT INTO products(name, price_buy, price_sell, stock, category, manufacturing_date, expiry_date) VALUES(?,?,?,?,?,?,?)")
-	if err != nil {
-		http.Error(w, "Failed to prepare statement: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer stmt.Close()
+    // Datas padrão caso venham vazias (opcional)
+    if p.ManufacturingDate.IsZero() { p.ManufacturingDate = time.Now() }
+    if p.ExpiryDate.IsZero() { p.ExpiryDate = time.Now().AddDate(0, 1, 0) }
 
-	res, err := stmt.Exec(p.Name, p.PriceBuy, p.PriceSell, p.Stock, p.Category, p.ManufacturingDate, p.ExpiryDate)
-	if err != nil {
-		http.Error(w, "Failed to execute statement: "+err.Error(), http.StatusInternalServerError)
+	// Chama o Repository (o GORM lá dentro resolve o INSERT)
+	if err := h.Repo.CreateProduct(&p); err != nil {
+		http.Error(w, "Erro ao criar produto: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	id, err := res.LastInsertId()
-	if err != nil {
-		http.Error(w, "Failed to get last insert ID: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	p.ID = uint(id)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(p)
+}
+
+// 4. ATUALIZAR PRODUTO (PUT) - NOVO!
+func (h *ProdutoHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Pega o ID da URL (/produtos/{id})
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	var p models.Product
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		http.Error(w, "JSON inválido", http.StatusBadRequest)
+		return
+	}
+
+	// Garante que o ID do objeto é o mesmo da URL
+	p.ID = uint(id)
+
+	// Chama o Repository para salvar as alterações
+	if err := h.Repo.UpdateProduct(&p); err != nil {
+		http.Error(w, "Erro ao atualizar: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Produto atualizado"})
 }

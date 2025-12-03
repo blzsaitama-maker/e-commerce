@@ -3,6 +3,7 @@ module e-commerce-backend
 go 1.22
 
 require (
+	github.com/gorilla/mux v1.8.1
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
 )

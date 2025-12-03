@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../screens/new_page.dart';
 import '../../products/screens/product_form_screen.dart';
 import '../../products/widgets/product_list_widget.dart';
+import '../../sales/screens/sales_screen.dart'; // Import da nova tela de Vendas
 import './custom_card.dart';
 
 class TopWindowSection extends StatelessWidget {
@@ -25,10 +26,18 @@ class TopWindowSection extends StatelessWidget {
         children: List.generate(10, (index) {
           return CustomCard(
             color: cardColors[index % cardColors.length],
-            text: 'Top ${index + 1}',
+            // Altera o texto do primeiro card para indicar que é Venda/PDV
+            text: index == 0 ? 'Nova Venda' : 'Top ${index + 1}',
             gap: gap,
             onTap: () {
               if (index == 0) {
+                // Abre a tela de Vendas em Fullscreen (nova rota)
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SalesScreen()),
+                );
+              } else if (index == 1) {
+                // Exemplo: Mantendo NewPage no index 1 ou onde preferir
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const NewPage()),

@@ -7,15 +7,16 @@ import (
 )
 
 type Product struct {
-	gorm.Model
-	Name              string    `json:"name" gorm:"not null"`
-	PriceBuy          float64   `json:"price_buy" gorm:"not null"`
-	PriceSell         float64   `json:"price_sell" gorm:"not null"`
-	Stock             int       `json:"stock" gorm:"not null"`
-	Category          string    `json:"category"`
-	ManufacturingDate time.Time `json:"manufacturing_date"`
-	ExpiryDate        time.Time `json:"expiry_date"`
-	Barcode           string    `json:"barcode" gorm:"not null;default:''"` // New field, now mandatory
+	gorm.Model        `json:"-"` // Oculta os campos padrão do GORM do JSON principal
+	ID                uint       `json:"id" gorm:"primarykey"` // Expõe o ID explicitamente
+	Name              string     `json:"name" gorm:"not null"`
+	PriceBuy          float64    `json:"price_buy" gorm:"not null"`
+	PriceSell         float64    `json:"price_sell" gorm:"not null"`
+	Stock             int        `json:"stock" gorm:"not null"`
+	Category          string     `json:"category"`
+	ManufacturingDate time.Time  `json:"manufacturing_date"`
+	ExpiryDate        time.Time  `json:"expiry_date"`
+	Barcode           string     `json:"barcode" gorm:"not null;default:''"` // New field, now mandatory
 }
 
 // IsNearExpiry verifica se o produto já passou de 80% da vida útil
