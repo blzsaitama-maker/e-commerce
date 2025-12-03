@@ -1,8 +1,6 @@
 import 'dart:async'; 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Import para LogicalKeyboardKey e SystemChrome
-import 'package:intl/intl.dart'; 
-import '../../../app/core/theme/app_colors.dart';
 import '../../../app/data/models/product.dart';
 import '../../../app/data/services/api_service.dart';
 
@@ -151,7 +149,13 @@ class _SalesScreenState extends State<SalesScreen> {
     term = term.trim().toLowerCase();
     if (_products.isEmpty) return;
 
-    final Product dummy = Product(id: -1, name: '', priceBuy: 0, priceSell: 0, stock: 0, category: '', manufacturingDate: DateTime.now(), expiryDate: DateTime.now());
+    final Product dummy = Product(
+      id: -1,
+      name: '',
+      priceBuy: 0,
+      priceSell: 0,
+      stock: 0,
+    );
 
     final Product foundProduct = _products.firstWhere(
       (p) => (p.barcode?.toLowerCase() == term) || (p.id.toString() == term),
@@ -653,7 +657,7 @@ class _SalesScreenState extends State<SalesScreen> {
                                                       child: Text("${qty}x", style: TextStyle(color: Colors.indigo.shade900, fontWeight: FontWeight.bold, fontSize: 14)),
                                                     ),
                                                     const SizedBox(width: 8),
-                                                    Text('${p.barcode ?? "Sem Cód."}', style: const TextStyle(color: Colors.black54, fontSize: 14)),
+                                                    Text(p.barcode ?? "Sem Cód.", style: const TextStyle(color: Colors.black54, fontSize: 14)),
                                                   ],
                                                 ),
                                                 trailing: SizedBox( // AQUI: Usando SizedBox para controlar largura e evitar overflow

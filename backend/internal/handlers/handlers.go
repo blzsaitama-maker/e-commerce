@@ -2,13 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"log" // <--- ADICIONADO
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/gorilla/mux"
 	"e-commerce-backend/internal/database"
 	"e-commerce-backend/internal/models"
+	"github.com/gorilla/mux"
 )
 
 type ProdutoHandler struct {
@@ -68,12 +69,18 @@ func (h *ProdutoHandler) ListarProdutosVencendo(w http.ResponseWriter, r *http.R
 // CRIAR
 func (h *ProdutoHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	var p models.Product
-	
+
 	// Tenta decodificar o JSON
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		http.Error(w, "JSON inválido", http.StatusBadRequest)
+		log.Printf("Erro ao decodificar JSON: %v", err) // Log do erro de decodificação
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "JSON inválido: " + err.Error()})
 		return
 	}
+
+	// --- LOG DE DEBUG ---
+	log.Printf(">>> Produto recebido para cadastro: %+v", p)
 
 	// --- LÓGICA DE PROTEÇÃO (MVP) ---
 	// Se o frontend mandar sem Categoria, forçamos a Categoria 1 (Geral)
@@ -91,12 +98,16 @@ func (h *ProdutoHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Repo.CreateProduct(&p); err != nil {
+		// --- LOG DE DEBUG ---
+		log.Printf("!!! Erro ao salvar no banco: %v", err)
+
 		// Retorna erro detalhado (provavelmente barcode duplicado)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
+	log.Printf("<<< Produto cadastrado com SUCESSO: ID %d", p.ID)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(p)
@@ -105,18 +116,21 @@ func (h *ProdutoHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 // ATUALIZAR
 func (h *ProdutoHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	vars := mux.Vars(r)
 	id, _ := strconv.Atoi(vars["id"])
 
 	var p models.Product
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		http.Error(w, "JSON inválido", http.StatusBadRequest)
+		log.Printf("Erro ao decodificar JSON na atualização: %v", err) // Log do erro
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "JSON inválido: " + err.Error()})
 		return
 	}
 
 	p.ID = uint(id)
-	
+
 	// Proteção de categoria na edição também
 	if p.CategoryID == 0 {
 		p.CategoryID = 1

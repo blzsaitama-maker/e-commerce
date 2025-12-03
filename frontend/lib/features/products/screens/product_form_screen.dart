@@ -9,13 +9,14 @@ import 'package:intl/intl.dart';
 
 // --- WIDGET STATEFUL (CLASSE PRINCIPAL) ---
 class ProductFormScreen extends StatefulWidget {
-  const ProductFormScreen({super.key});
+  final ApiService? apiService;
+  const ProductFormScreen({super.key, this.apiService});
 
   @override
   State<ProductFormScreen> createState() => _ProductFormScreenState();
 }
 
-// --- FORMATAÇÃO AUXILIAR (COPIE JUNTO) ---
+// --- FORMATAÇÃO AUXILIAR ---
 class BarcodeTextInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
@@ -77,7 +78,7 @@ class MoneyInputFormatter extends TextInputFormatter {
 
 class _ProductFormScreenState extends State<ProductFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  final ApiService apiService = ApiService();
+  late final ApiService apiService;
 
   // Variáveis para controle de busca automática
   Timer? _debounce;
@@ -115,6 +116,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   @override
   void initState() {
     super.initState();
+    apiService = widget.apiService ?? ApiService();
     // Adiciona o ouvinte para detectar quando o usuário digita no código de barras
     _barcodeController.addListener(_onBarcodeChanged);
   }
@@ -181,9 +183,13 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
           _priceSellController.text = product.priceSell.toStringAsFixed(2);
           _stockController.text = product.stock.toString();
 
-          // Tenta selecionar fornecedor e unidade se existirem na lista
-          if (_suppliers.contains(product.category)) {
-            _selectedSupplier = product.category;
+          // Tenta selecionar o fornecedor com base na categoria retornada
+          if (product.category != null &&
+              _suppliers.contains(product.category!.name)) {
+            _selectedSupplier = product.category!.name;
+          } else {
+            // Se a categoria não estiver na lista ou for nula, volta para o padrão
+            _selectedSupplier = 'Nenhum';
           }
 
           // Preenche datas
@@ -245,14 +251,19 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   Future<void> _submitForm() async {
     if (_formKey.currentState!.validate()) {
       final newProduct = Product(
-        id: _editingProductId ?? 0, // IMPORTANTE: Passa o ID se for edição
+        id: _editingProductId, // CORRETO: Passa o ID nulo se for um novo cadastro
         name: _nameController.text,
         priceBuy: double.tryParse(_priceBuyController.text) ?? 0.0,
         priceSell: double.tryParse(_priceSellController.text) ?? 0.0,
         stock: int.tryParse(_stockController.text) ?? 0,
+        minStock: int.tryParse(_minStockController.text) ?? 5,
         manufacturingDate: _manufacturingDate,
         expiryDate: _expiryDate,
         barcode: _barcodeController.text.replaceAll('-', ''),
+        // O campo 'category' foi removido pois esperava um objeto, não uma String.
+        // O backend irá usar o 'category_id' para associar a categoria.
+        // TODO: Implementar uma lógica para buscar o ID da categoria selecionada.
+        categoryId: 1,
       );
 
       try {
@@ -662,8 +673,9 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                 firstDate: DateTime.now(),
                                 lastDate: DateTime(2030),
                               );
-                              if (picked != null)
+                              if (picked != null) {
                                 setState(() => _expiryDate = picked);
+                              }
                             },
                           ),
                         ),
@@ -780,7 +792,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
         SizedBox(
           height: 40,
           child: DropdownButtonFormField<String>(
-            value: value,
+            initialValue: value,
             isExpanded: true,
             decoration: const InputDecoration(
               filled: true, // Adicionado para manter a consistência visual
